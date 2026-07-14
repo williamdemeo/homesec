@@ -179,7 +179,7 @@ def _parse_explicit_labels(text: str) -> list[Label]:
 def _collect_labels_from_issues(text: str) -> list[Label]:
     """Collect unique label names referenced in issues' ``**Labels:**`` lines."""
     seen: dict[str, Label] = {}
-    for m in re.finditer(r"\*\*Labels:\*\*\s*(.+)", text):
+    for m in re.finditer(r"\*\*Labels:?\*\*:?\s*(.+)", text):
         for raw in m.group(1).split(","):
             name = raw.strip().strip("`").strip()
             if name and name not in seen:
@@ -217,6 +217,14 @@ def _parse_issues(text: str) -> list[Issue]:
 
         raw_body = text[start:end].strip()
 
+        # Truncate at a BEGIN/END GENERATED region marker that leaked in
+        # (happens for the last issue inside each generated region, and for
+        # the final issue in the file, whose raw body would otherwise swallow
+        # the trailing dependency-graph and how-to sections).
+        gen_leak = re.search(r"<!--\s*(?:BEGIN|END) GENERATED:", raw_body)
+        if gen_leak:
+            raw_body = raw_body[:gen_leak.start()].strip()
+
         # Truncate at milestone section headers that leaked in
         # (happens for the last issue in each milestone section)
         ms_leak = re.search(r"\n---+\s*\n+## Milestone \d+", raw_body)
@@ -226,8 +234,11 @@ def _parse_issues(text: str) -> list[Issue]:
         # Remove trailing --- separators
         raw_body = re.sub(r"\n---+\s*$", "", raw_body).strip()
 
-        # Extract labels from the **Labels:** line
-        labels_match = re.search(r"\*\*Labels:\*\*\s*(.+)", raw_body)
+        # Extract labels from the **Labels:** line.  Accept both the
+        # hand-authored form (`**Labels:**`) and the form emitted by
+        # gh_project_render.py (`**Labels**:`), so populate can be re-run
+        # against a rendered file.
+        labels_match = re.search(r"\*\*Labels:?\*\*:?\s*(.+)", raw_body)
         labels = []
         if labels_match:
             label_str = labels_match.group(1).strip()
@@ -237,11 +248,11 @@ def _parse_issues(text: str) -> list[Issue]:
         ms_line_match = re.search(r"\*\*Milestone:\*\*\s*(.+)", raw_body)
 
         # Build the issue body: remove the Labels and Milestone metadata lines
+        # (both colon-inside and colon-outside variants; see labels_match above)
+        meta_line = re.compile(r"^\*\*(?:Labels|Milestone):?\*\*:?")
         body_lines = []
         for line in raw_body.split("\n"):
-            if line.strip().startswith("**Labels:**"):
-                continue
-            if line.strip().startswith("**Milestone:**"):
+            if meta_line.match(line.strip()):
                 continue
             body_lines.append(line)
 
