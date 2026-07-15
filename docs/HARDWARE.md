@@ -2,57 +2,62 @@
 File: docs/HARDWARE.md
 
 Hardware inventory and system requirements for the homesec project.
-Tracked by issue M1-1.  This is the reference document later milestones
-point back to for device capabilities (stream protocols, codecs, port
-types).  Spec-sheet values are recorded here; fields that must be read
-off the physical hardware are marked "TODO (unboxing)" and consolidated
-in the checklist at the end.
+Tracked by issue M1-1.  This is the reference document to which later milestones
+point for device capabilities (stream  protocols, codecs, port types).
+Spec-sheet values are recorded here; fields that must be read off the physical
+hardware are marked "TODO (unboxing)" and consolidated in the checklist at the end.
 -->
 
 # Hardware inventory and system requirements
 
 **Status**: living document · **Date started**: 2026-07-14 · **Issue**: M1-1
 
-This file records (a) what equipment we have and the capabilities later work
-depends on, and (b) what the finished system must actually do.  Two kinds of
-entry appear below:
+This file records
 
-- **Spec-sheet values** — taken from the manufacturers' published
-  specifications (sources listed at the end).  These are reliable enough to
-  design against, but a few are flagged **⚠ verify on device** where the
-  product line has variants or where community reports contradict the spec;
-  each such flag names the M2 issue that will confirm it.
-- **Per-unit values** — MAC addresses, firmware versions at unboxing, and the
-  exact configuration of the two server candidates.  These can only be read
-  off the hardware.  They are marked **TODO (unboxing)** inline and gathered
-  into a single checklist in the last section.
+1. what equipment we have and the capabilities later work depends on, and
+2. what the finished system must actually do.
+
+Two kinds of entry appear below:
+
++  **Spec-sheet values** — taken from the manufacturers' published specifications
+   (sources listed at the end).  These are  reliable enough to design against, but a
+   few are flagged **⚠ verify on device** where the product line has variants or
+   where community reports contradict the spec; each such flag names the M2 issue
+   that will confirm it.
++  **Per-unit values** — MAC addresses, firmware versions at unboxing, and the exact
+   configuration of the two server candidates.  These can only be read off the
+   hardware.  They are marked **TODO (unboxing)** inline and gathered into a single
+   checklist in the last section.
 
 ---
 
 ## 1. Inventory summary
 
-| # | Device | Model | Role | Notes |
-|---|--------|-------|------|-------|
-| 2× | Indoor camera | Reolink E1 (4MP, WiFi 6, pan-tilt) | Indoor monitoring | microSD slot; 2-way audio |
-| 1× | Outdoor camera | Reolink RLC-811WA | Outdoor monitoring | 4K, 5× optical zoom; microSD slot; IP67 |
-| 1× | ML accelerator | Google Coral USB Accelerator | Local object detection | Edge TPU; wants USB 3.0 |
-| 1× | Server (chosen) | Lenovo ThinkPad X1 Yoga (3rd gen, 2018) | 24/7 NVR host | Intel iGPU decode; battery = UPS |
-| 1× | Server (reserve) | Linux desktop | Reserve / stretch compute | 8 GB GPU; higher idle draw |
-| 1× | Router / uplink | Starlink | WiFi + internet | CGNAT (no inbound); see `NETWORK.md` |
+| #  | Device           | Model                                   | Role                      | Notes                                   |
+|----|------------------|-----------------------------------------|---------------------------|-----------------------------------------|
+| 2× | Indoor camera    | Reolink E1 (4MP, WiFi 6, pan-tilt)      | Indoor monitoring         | microSD slot; 2-way audio               |
+| 1× | Outdoor camera   | Reolink RLC-811WA                       | Outdoor monitoring        | 4K, 5× optical zoom; microSD slot; IP67 |
+| 1× | ML accelerator   | Google Coral USB Accelerator            | Local object detection    | Edge TPU; wants USB 3.0                 |
+| 1× | Server (chosen)  | Lenovo ThinkPad X1 Yoga (3rd gen, 2018) | 24/7 NVR host             | Intel iGPU decode; battery = UPS        |
+| 1× | Server (reserve) | Linux desktop                           | Reserve / stretch compute | 8 GB GPU; higher idle draw              |
+| 1× | Router / uplink  | Starlink                                | WiFi + internet           | CGNAT (no inbound); see `NETWORK.md`    |
 
 The server choice (laptop vs. desktop) is decided in **ADR-003 / issue M1-4**;
 the desktop is documented here for completeness and held in reserve for the
-M7-2 GPU-enrichment evaluation.
+[M7-2] GPU-enrichment evaluation.
 
 ---
 
 ## 2. Cameras
 
 All three are Reolink WiFi cameras with a local microSD slot.  For the NVR we
-care about four things per camera: the **stream sources** (protocol + URL +
-codec + resolution/fps for a full-quality *main* stream and a low-cost *sub*
-stream), **night-vision** behavior, **microSD** capacity for camera-local
-failover recording, and (indoors) **pan/tilt**.
+care about four things per camera:
+
+1.  the **stream sources** (protocol + URL + codec + resolution/fps for a full-quality
+    *main* stream and a low-cost *sub* stream),
+2.  **night-vision** behavior,
+3.  **microSD** capacity for camera-local failover recording, and
+4.  (indoors) **pan/tilt**.
 
 > **Stream-protocol note.**  Reolink cameras typically expose RTSP (port 554),
 > ONVIF (port 8000), and an HTTP-FLV stream (port 1935, `bcs` app).  Frigate's
@@ -78,18 +83,18 @@ Retail description: *"E1 (2 Pack), Smart Human/Pet Detection · 4MP HD Plug-in
 Indoor WiFi 6 Pan Tilt Pet Camera, Baby Monitor, Night Vision, 2-Way Talk,
 Local microSD Card Storage."*
 
-| Property | Value | Confidence |
-|----------|-------|------------|
-| Sensor / resolution | 4 MP, 2560 × 1440 ("Super HD") | Spec |
-| Main-stream codec | H.264 (confirm whether H.265 is offered) | ⚠ verify — M2-2 |
-| Sub-stream | Lower-res "fluent" stream (e.g. 640×480 / 15 fps class) | ⚠ verify — M2-2 |
-| WiFi band | **Listing says "WiFi 6."** Reolink's classic E1 spec lists **2.4 GHz-only**; E1 Pro/Zoom add dual-band. Listing and legacy spec disagree. | ⚠ verify on device — see note below, feeds M1-2 |
-| Pan / tilt | ≈355° pan / ≈50° tilt (marketed as 360° horizontal) | ⚠ verify in-app |
-| Night vision | Infrared, ~8 IR LEDs, range ~12 m (40 ft) | Spec |
-| Two-way audio | Yes (mic + speaker) | Spec |
-| microSD | Up to 256 GB per classic-E1 spec (some variants list 512 GB) | ⚠ verify max accepted |
-| Protocols | RTSP :554, ONVIF :8000, RTMP :1935, media :9000 (per E1 spec) — **RTSP reliability varies by E1 revision/firmware** | ⚠ verify — M2-2 |
-| Smart detection | Human / pet (on-camera); Frigate will do its own detection on the Coral | Spec |
+| Property            | Value                                                   | Confidence      |
+|---------------------|---------------------------------------------------------|-----------------|
+| Sensor / resolution | 4 MP, 2560 × 1440 ("Super HD")                          | Spec            |
+| Main-stream codec   | H.264 (confirm whether H.265 is offered)                | ⚠ verify — M2-2 |
+| Sub-stream          | Lower-res "fluent" stream (e.g. 640×480 / 15 fps class) | ⚠ verify — M2-2 |
+| WiFi band           | **Listing says "WiFi 6."** Reolink's classic E1 spec lists **2.4 GHz-only**; E1 Pro/Zoom add dual-band. Listing and legacy spec disagree. | ⚠ verify on device — see note below, feeds M1-2 |
+| Pan / tilt          | ≈355° pan / ≈50° tilt (marketed as 360° horizontal) | ⚠ verify in-app |
+| Night vision        | Infrared, ~8 IR LEDs, range ~12 m (40 ft) | Spec |
+| Two-way audio       | Yes (mic + speaker) | Spec |
+| microSD             | Up to 256 GB per classic-E1 spec (some variants list 512 GB) | ⚠ verify max accepted |
+| Protocols           | RTSP :554, ONVIF :8000, RTMP :1935, media :9000 (per E1 spec) — **RTSP reliability varies by E1 revision/firmware** | ⚠ verify — M2-2 |
+| Smart detection     | Human / pet (on-camera); Frigate will do its own detection on the Coral | Spec |
 
 **⚠ WiFi-band question (matters for M1-2).**  The box advertises "WiFi 6," but
 Reolink's long-standing E1 specification lists 2.4 GHz-only radio (the "WiFi 6"
@@ -101,36 +106,36 @@ E1s may not be, which changes the 2.4 GHz channel plan in `NETWORK.md`.
 
 Per-unit (TODO, unboxing — one row per camera):
 
-| Unit | Location (planned) | MAC | Firmware @ unboxing | Assigned IP |
-|------|--------------------|-----|---------------------|-------------|
-| E1-a | _TODO_ | _TODO_ | _TODO_ | _TODO (per NETWORK.md plan)_ |
-| E1-b | _TODO_ | _TODO_ | _TODO_ | _TODO_ |
+| Unit | Location (planned)   | MAC    | Firmware @ unboxing | Assigned IP                  |
+|------|----------------------|--------|---------------------|------------------------------|
+| E1-a | front entry landing  | _TODO_ | _TODO_              | _TODO (per NETWORK.md plan)_ |
+| E1-b | second floor landing | _TODO_ | _TODO_              | _TODO_                       |
 
 ### 2.2 Reolink RLC-811WA — outdoor (×1)
 
 Retail description: *"4K 8MP Outdoor Security Camera with 5X Optical Zoom,
 Wi-Fi 6, H.265 Recording, Color Night Vision, Human/Vehicle/Animal Detection."*
 
-| Property | Value | Confidence |
-|----------|-------|------------|
+| Property            | Value                                   | Confidence |
+|---------------------|-----------------------------------------|------------|
 | Sensor / resolution | 8 MP, 3840 × 2160 @ 15 fps; 1/2.8″ CMOS | Spec |
-| Main-stream codec | **H.265** (also H.264) — H.265 halves 4K storage and the X1 Yoga decodes it in hardware | Spec |
-| Sub-stream | Lower-res "fluent" stream for detection | ⚠ verify exact res/fps — M2-1 |
+| Main-stream codec   | **H.265** (also H.264) — H.265 halves 4K storage and the X1 Yoga decodes it in hardware | Spec |
+| Sub-stream          | Lower-res "fluent" stream for detection | ⚠ verify exact res/fps — M2-1 |
 | Optical zoom / lens | 5× optical, f = 2.7–13.5 mm, F1.6; FOV ~100°–31° (wide→tele) | Spec |
-| WiFi band | 2.4 / 5 GHz, WiFi 6 (dual-band confirmed) | Spec |
-| Pan / tilt | None (fixed mount; zoom only) | Spec |
-| Night vision | IR to ~30 m **plus** color night vision via 5× spotlights (4 W, 6500 K) | Spec |
-| Two-way audio | Yes | Spec |
-| Weatherproof | IP67 | Spec |
-| microSD | microSD slot (confirm max, typically up to 256 GB) | ⚠ verify max accepted |
-| Protocols | RTSP :554 + ONVIF :8000 (standard on Reolink 8-series) | ⚠ confirm paths — M2-1 |
-| Smart detection | Human / vehicle / animal (on-camera) | Spec |
+| WiFi band           | 2.4 / 5 GHz, WiFi 6 (dual-band confirmed) | Spec |
+| Pan / tilt          | None (fixed mount; zoom only) | Spec |
+| Night vision        | IR to ~30 m **plus** color night vision via 5× spotlights (4 W, 6500 K) | Spec |
+| Two-way audio       | Yes | Spec |
+| Weatherproof        | IP67 | Spec |
+| microSD             | microSD slot (confirm max, typically up to 256 GB) | ⚠ verify max accepted |
+| Protocols           | RTSP :554 + ONVIF :8000 (standard on Reolink 8-series) | ⚠ confirm paths — M2-1 |
+| Smart detection     | Human / vehicle / animal (on-camera) | Spec |
 
 Per-unit (TODO, unboxing):
 
-| Unit | Location (planned) | MAC | Firmware @ unboxing | Assigned IP |
-|------|--------------------|-----|---------------------|-------------|
-| 811WA | _TODO_ | _TODO_ | _TODO_ | _TODO_ |
+| Unit  | Location (planned) | MAC    | Firmware @ unboxing | Assigned IP |
+|-------|--------------------|--------|---------------------|-------------|
+| 811WA | NE corner of house | _TODO_ | _TODO_              | _TODO_      |
 
 ---
 
@@ -166,7 +171,7 @@ that rides through short power cuts as a built-in UPS.
 | CPU | 8th-gen Intel Core (i5-8250U/8350U or i7-8550U/8650U, Kaby Lake-R, 4C/8T, 15 W) | Spec range — ⚠ confirm exact CPU |
 | iGPU | Intel UHD Graphics 620 — VAAPI / Quick Sync decode of H.264, HEVC 8-bit (and 10-bit), VP8/9 | Spec |
 | RAM | Up to 16 GB LPDDR3-2133, **soldered** (not upgradeable) | Spec — ⚠ confirm amount |
-| Storage | M.2 NVMe SSD (OS + Frigate DB; recordings go to external drive) | ⚠ confirm capacity |
+| Storage | M.2 NVMe SSD (OS + Frigate DB; recordings go to external drive) | 2 Tb confirm capacity |
 | USB-A (for Coral + drive) | 2× USB-A 3.1 Gen 1 (= USB 3.0) | Spec — ⚠ confirm on unit |
 | USB-C | 2× Thunderbolt 3 (USB-C) | Spec |
 | Other ports | HDMI, microSD reader, mini-Ethernet (dongle), 3.5 mm | Spec |
