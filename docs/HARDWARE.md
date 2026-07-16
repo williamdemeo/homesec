@@ -25,7 +25,7 @@ Two kinds of entry appear below:
    where community reports contradict the spec; each such flag names the M2 issue
    that will confirm it.
 +  **Per-unit values** — MAC addresses, firmware versions at unboxing, and the exact
-   configuration of the two server candidates.  These can only be read off the
+   configuration of the server candidates.  These can only be read off the
    hardware.  They are marked **TODO (unboxing)** inline and gathered into a single
    checklist in the last section.
 
@@ -33,18 +33,20 @@ Two kinds of entry appear below:
 
 ## 1. Inventory summary
 
-| #  | Device           | Model                                   | Role                      | Notes                                   |
-|----|------------------|-----------------------------------------|---------------------------|-----------------------------------------|
-| 2× | Indoor camera    | Reolink E1 (4MP, WiFi 6, pan-tilt)      | Indoor monitoring         | microSD slot; 2-way audio               |
-| 1× | Outdoor camera   | Reolink RLC-811WA                       | Outdoor monitoring        | 4K, 5× optical zoom; microSD slot; IP67 |
-| 1× | ML accelerator   | Google Coral USB Accelerator            | Local object detection    | Edge TPU; wants USB 3.0                 |
-| 1× | Server (chosen)  | Lenovo ThinkPad X1 Yoga (3rd gen, 2018) | 24/7 NVR host             | Intel iGPU decode; battery = UPS        |
-| 1× | Server (reserve) | Linux desktop                           | Reserve / stretch compute | 8 GB GPU; higher idle draw              |
-| 1× | Router / uplink  | Starlink                                | WiFi + internet           | CGNAT (no inbound); see `NETWORK.md`    |
+| #  | Device            | Model                                   | Role                            | Notes                                                 |
+|----|-------------------|-----------------------------------------|---------------------------------|-------------------------------------------------------|
+| 2× | Indoor camera     | Reolink E1 (4MP, WiFi 6, pan-tilt)      | Indoor monitoring               | microSD slot; 2-way audio                             |
+| 1× | Outdoor camera    | Reolink RLC-811WA                       | Outdoor monitoring              | 4K, 5× optical zoom; microSD slot; IP67               |
+| 1× | ML accelerator    | Google Coral USB Accelerator            | Local object detection          | Edge TPU; wants USB 3.0; role now host-dependent (§3) |
+| 1× | Server (down)     | Lenovo ThinkPad X1 Yoga (3rd gen, 2018) | Intended low-power NVR host     | ⚠ currently won't boot — see §4.1                     |
+| 1× | Server (interim)  | Linux desktop                           | Near-term NVR host              | 8 GB GPU; higher idle draw                            |
+| 1× | Server (new)      | NVIDIA Jetson AGX Orin 64 GB Dev Kit    | NVR-host candidate / AI offload | aarch64, Ampere GPU + DLA; can run whole NVR (§4.3)   |
+| 1× | Router / uplink   | Starlink                                | WiFi + internet                 | CGNAT (no inbound); see `NETWORK.md`                  |
 
-The server choice (laptop vs. desktop) is decided in **ADR-003 / issue M1-4**;
-the desktop is documented here for completeness and held in reserve for the
-[M7-2] GPU-enrichment evaluation.
+The server-host choice (**ADR-003 / issue M1-4**) is now **reopened with three
+candidates** — the laptop (currently down), the desktop, and the newly-added
+Jetson AGX Orin — plus a NixOS-integration tradeoff that did not exist before.
+See **§4.0** for the current status and the near-term plan.
 
 ---
 
@@ -155,23 +157,67 @@ TPU, which is what makes running three cameras on a low-power laptop feasible.
 
 No per-unit data to collect beyond confirming it enumerates (done in M3-3).
 
+> **The Coral's role is now host-dependent.**  On an x86 host (laptop or desktop)
+> the Coral is the detection accelerator, as designed.  But if the **Jetson AGX
+> Orin** (§4.3) becomes the host, its GPU + DLA run detection directly (Frigate's
+> TensorRT detector) and the Coral would be **redundant** — kept as a spare.  So
+> whether we use the Coral at all is downstream of the ADR-003 host decision.
+
 ---
 
 ## 4. Server candidates
 
-### 4.1 Lenovo ThinkPad X1 Yoga, 3rd gen (2018) — chosen host
+### 4.0 Status and near-term plan (revised 2026-07-16)
 
-Why it's the presumptive choice (ADR-003 / M1-4): low idle draw, silent, an
-Intel iGPU that decodes H.264 **and** HEVC/H.265 in hardware (essential for the
-4K outdoor stream), USB-A 3.0 for the Coral and external storage, and a battery
-that rides through short power cuts as a built-in UPS.
+Two developments changed the server picture after the initial inventory:
+
+1.  **The X1 Yoga is currently down.**  Its failing 512 GB SSD (bad sectors) was
+    replaced with a new **2 TB SSD**, but the machine now fails to install Linux
+    (the Ubuntu installer stalls from USB).  Until it is revived it cannot be the
+    NVR host — though it remains the preferred *low-power* target if repaired
+    (§4.1).
+2.  **A Jetson AGX Orin 64 GB is available** and unused — a much more powerful
+    machine that can run the entire NVR by itself (§4.3).
+
+**Near-term plan (tight schedule — a one-week absence starts soon):**
+
+-  **Camera first, server later.**  Getting the outdoor **RLC-811WA** recording
+   to its own **microSD** and viewable/alerting through the Reolink app needs
+   **no server at all**, and is the realistic goal before departure.  This means
+   a *temporary*, time-boxed reliance on the Reolink app/cloud for the week — an
+   explicit exception to the no-vendor-cloud stance in §6.7, to be undone once
+   the NVR is live (M2-3).
+-  **The NVR-host decision is not on the critical path** and should not be rushed
+   under the deadline.  The **desktop** (§4.2) is the low-friction interim host;
+   the **Jetson** (§4.3) is the strongest permanent candidate and is what M1-4
+   should evaluate.
+-  The host decision is **ADR-003 / issue #5**, still open — now weighing three
+   machines plus a NixOS-vs-vendor-OS tradeoff.
+
+### 4.1 Lenovo ThinkPad X1 Yoga, 3rd gen (2018) — preferred low-power host (currently DOWN)
+
+**⚠ Current status: will not install/boot.**  After swapping the failing 512 GB
+SSD for a new 2 TB SSD, the Ubuntu installer stalls when booted from USB.  Things
+worth trying, in rough priority: switch the BIOS SATA/NVMe mode from **RAID /
+Intel RST** to **AHCI** (Linux often can't see or install to the disk under RST);
+disable **Secure Boot**; add the **`nomodeset`** kernel parameter at the
+installer boot menu (the UHD 620 can hang the graphical installer); **re-write
+the USB stick** and verify the ISO checksum, using a USB-A port; and update the
+BIOS.  Until it boots it is out of the running — but if revived it is still the
+best *low-power* host, so it is worth a second pass (tracked under M1-4 / M3-1).
+
+The reason it was the initial choice, and still the low-power ideal if repaired
+(ADR-003 / M1-4): low idle draw, silent, an Intel iGPU that decodes H.264 **and**
+HEVC/H.265 in hardware (essential for the 4K outdoor stream), USB-A 3.0 for the
+Coral and external storage, and a battery that rides through short power cuts as
+a built-in UPS.
 
 | Property | Value | Confidence |
 |----------|-------|------------|
 | CPU | 8th-gen Intel Core (i5-8250U/8350U or i7-8550U/8650U, Kaby Lake-R, 4C/8T, 15 W) | Spec range — ⚠ confirm exact CPU |
 | iGPU | Intel UHD Graphics 620 — VAAPI / Quick Sync decode of H.264, HEVC 8-bit (and 10-bit), VP8/9 | Spec |
 | RAM | Up to 16 GB LPDDR3-2133, **soldered** (not upgradeable) | Spec — ⚠ confirm amount |
-| Storage | M.2 NVMe SSD (OS + Frigate DB; recordings go to external drive) | 2 Tb confirm capacity |
+| Storage | **New 2 TB M.2 NVMe** (replaced a failing 512 GB); OS + Frigate DB, recordings on external drive | ⚠ OS install pending — see status above |
 | USB-A (for Coral + drive) | 2× USB-A 3.1 Gen 1 (= USB 3.0) | Spec — ⚠ confirm on unit |
 | USB-C | 2× Thunderbolt 3 (USB-C) | Spec |
 | Other ports | HDMI, microSD reader, mini-Ethernet (dongle), 3.5 mm | Spec |
@@ -182,8 +228,9 @@ that rides through short power cuts as a built-in UPS.
 Coral + one external USB drive directly, no hub required.  Confirm both ports
 are USB 3.0 (they should be) on the actual unit.
 
-Per-unit (TODO, unboxing / inspection):
+Per-unit (TODO, once it boots):
 
+- [ ] **Revive it** (see the AHCI / Secure Boot / `nomodeset` / USB-stick steps above)
 - [ ] Exact CPU model (`lscpu`)
 - [ ] Installed RAM (`free -h`)
 - [ ] NVMe capacity and free space (`lsblk`, `df -h`)
@@ -191,11 +238,15 @@ Per-unit (TODO, unboxing / inspection):
 - [ ] BIOS: is "Power On with AC Attach" present? (recorded in ADR-003)
 - [ ] Confirm both Type-A ports negotiate USB 3.0 with the Coral (`lsusb -t`)
 
-### 4.2 Linux desktop — reserve
+### 4.2 Linux desktop — interim NVR host
 
-Held in reserve for the M7-2 evaluation (does the 8 GB GPU earn its power draw
-for Frigate's enrichment features — semantic search, face/plate recognition,
-generative descriptions?).  Not part of the day-one build.
+With the laptop down, the desktop is the **low-friction interim host**: a clean
+x86 target that runs NixOS + Frigate + the Coral without the Jetson's OS
+complications.  Its higher idle draw — the original reason it was only "reserve"
+— is the main cost; for an interim (or even permanent) host that may be
+acceptable, and it is quantified in the ADR-003 power comparison.  It also
+remains the machine for the separate **M7-2** GPU-enrichment evaluation.  Specs
+are still TODO (fill in once it is powered up).
 
 | Property | Value |
 |----------|-------|
@@ -206,6 +257,51 @@ generative descriptions?).  Not part of the day-one build.
 | PSU | _TODO — wattage (user reports "large power supply")_ |
 | Idle / load power | _TODO — measure with a plug meter for the ADR-003 cost comparison_ |
 
+### 4.3 NVIDIA Jetson AGX Orin 64 GB Developer Kit — new candidate (evaluate in M1-4)
+
+Available and currently unused.  On raw capability this is by far the strongest
+of the three machines, and it can run the **entire NVR by itself** — object
+detection on its GPU/DLA and video decode on its media engine — which would make
+the Coral unnecessary (§3).
+
+| Property | Value | Confidence |
+|----------|-------|------------|
+| CPU | 12-core Arm Cortex-A78AE (Armv8.2, **64-bit / aarch64**) | Spec |
+| GPU / accel | 2048-core NVIDIA Ampere GPU + 64 Tensor Cores; 2× NVDLA v2 | Spec |
+| AI performance | up to ~275 TOPS (INT8) — vast overkill for three cameras | Spec |
+| RAM | 64 GB LPDDR5 | Spec |
+| Storage | 64 GB eMMC on-module + M.2 NVMe slot (add an SSD for recordings) | ⚠ confirm an NVMe is fitted |
+| Video decode | NVDEC media engine — HW decode of H.264/H.265 incl. 4K (Orin has **no** HW *encoder*, which Frigate does not need for our setup) | Spec |
+| Networking / ports | onboard Ethernet (RJ45), USB 3.2 (A/C), DisplayPort | ⚠ confirm Ethernet link speed |
+| Power | configurable `nvpmodel`: 15 W / 30 W / 50 W / MAXN (~60 W) — a low mode is ample for 3 cameras | Spec |
+
+> **"ARMv7" in the listing is a mislabel.**  The AGX Orin is 64-bit **aarch64**
+> (Armv8.2, Cortex-A78AE); "ARMv7" would be 32-bit.  This matters because
+> software — including Frigate's image — is built for arm64.
+
+**Frigate on the Jetson — supported.**  Frigate ships a **`stable-tensorrt-jp6`**
+image for JetPack 6+.  Detection runs on the GPU/DLA via the **TensorRT** (or
+ONNX) detector — roughly **20–40 ms/inference**, slower per frame than the
+Coral's ~10 ms but able to run larger/better models and many streams
+effortlessly — and video decode uses the Jetson's **NVDEC** media engine.  One
+box does everything the laptop-plus-Coral plan does, and more.
+
+**The catch — NixOS integration.**  The Jetson's clean, vendor-supported path is
+NVIDIA **JetPack** (an Ubuntu-based L4T image) + Docker, **not** NixOS.  NixOS is
+possible via the community **[`jetpack-nixos`](https://github.com/anduril/jetpack-nixos)**
+overlay — it supports `orin-agx` and is actively maintained — but it is advanced:
+documented display-console quirks on Orin (no HDMI/DP console; serial for
+troubleshooting), UEFI-boot caveats, and a vendor-BSP flashing process.  So the
+Jetson trades some of our **declarative-NixOS reproducibility goal** (project
+goal #3) for raw power and use of idle hardware.
+
+**Working assessment (for ADR-003 / M1-4):** the Jetson is the most capable and
+the most compute-per-watt option, and it is free (already owned, idle).  Its one
+real downside is the NixOS friction.  Recommendation: evaluate it seriously as
+the *permanent* host — likely JetPack + Docker first, `jetpack-nixos` later —
+while the **desktop** stands up an NVR sooner if we want one running this week.
+Measure its wall-power in a low `nvpmodel` for the ADR-003 comparison.
+
 ---
 
 ## 5. Consumables and purchases still needed
@@ -214,7 +310,7 @@ Sizes are finalized by the **M3-2** retention math; rough guidance here.
 
 | Item | Qty | Guidance | Decided in |
 |------|-----|----------|------------|
-| microSD cards (camera-local failover) | 3 | High-endurance ("surveillance"/"endurance" rated) cards; size to the camera's max — 128–256 GB each is plenty for failover | M2-4 |
+| microSD cards (camera-local failover) | 3 | High-endurance ("surveillance"/"endurance" rated) cards; size to the camera's max — 128–256 GB each is plenty for failover.  **One is needed now** for the 811WA camera-first bring-up (§4.0). | M2-4 |
 | External USB drive (NVR recordings) | 1 | Powered USB 3.0 drive or SSD preferred over a bus-powered spinner for 24/7 duty; ~2 TB is a sensible start (≈2 weeks continuous or months of motion-only for 3 cameras) | M3-2 |
 | Camera mounting hardware | as needed | Outdoor 811WA: mount ≥ 2.5 m, aimed at the approach, within WiFi range; indoor E1s: shelf/wall near outlets | M2-1 / M2-2 |
 | (Possible) USB hub — powered, USB 3.0 | 0–1 | Only if the two laptop Type-A ports prove insufficient; the port-budget check says not needed | M3-2 |
@@ -297,8 +393,10 @@ tracked by an M2 (or later) task.
 | 811WA exact sub-stream res/fps; RTSP/ONVIF stream paths | M2-1 |
 | 811WA microSD max | M2-1 / M2-4 |
 | Coral enumerates and hits expected inference latency | M3-3 |
-| X1 Yoga exact CPU/RAM/SSD, USB 3.0 confirmation, BIOS AC-attach | M1-4 / M3-1 |
+| X1 Yoga: **revive it** (AHCI / Secure Boot / `nomodeset`), then CPU/RAM/SSD, USB 3.0, BIOS AC-attach | M1-4 / M3-1 |
 | Desktop full specs + measured power draw | M1-4 (ADR-003 cost comparison) |
+| Jetson: Frigate-on-JetPack vs `jetpack-nixos`; NVMe fitted; wall-power in low `nvpmodel` | M1-4 (ADR-003) |
+| Host decision among laptop / desktop / Jetson (+ NixOS tradeoff) | ADR-003 / #5 |
 
 ---
 
@@ -316,14 +414,20 @@ above.
 **Coral:**
 - [ ] Confirm it's the USB Accelerator (Type-C) and locate the USB-C-to-USB-C cable
 
-**X1 Yoga (chosen server):**
-- [ ] `lscpu`, `free -h`, `lsblk`, `df -h` — CPU, RAM, storage
+**X1 Yoga (currently down — revive first):**
+- [ ] Get it to install/boot: try AHCI (not Intel RST), disable Secure Boot, `nomodeset`, re-flash the USB stick
+- [ ] Once booting: `lscpu`, `free -h`, `lsblk`, `df -h` — CPU, RAM, storage
 - [ ] `lsusb -t` — confirm both Type-A ports are USB 3.0
 - [ ] Battery health; BIOS "Power On with AC Attach" present?
 
-**Desktop (reserve — for the ADR-003 comparison):**
+**Desktop (interim host + ADR-003 comparison):**
 - [ ] CPU, GPU + VRAM, RAM, PSU wattage
 - [ ] Idle and under-load power draw (plug meter)
+
+**Jetson AGX Orin (evaluate as permanent host):**
+- [ ] Confirm it boots; note the JetPack version; is an M.2 NVMe fitted?
+- [ ] Wall-power draw in a low `nvpmodel` (for the ADR-003 comparison)
+- [ ] Decide path: JetPack + Docker (fast) vs `jetpack-nixos` (declarative)
 
 ---
 
