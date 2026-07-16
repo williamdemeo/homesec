@@ -45,8 +45,9 @@ Two kinds of entry appear below:
 
 The server-host choice (**ADR-003 / issue M1-4**) is now **reopened with three
 candidates** — the laptop (currently down), the desktop, and the newly-added
-Jetson AGX Orin — plus a NixOS-integration tradeoff that did not exist before.
-See **§4.0** for the current status and the near-term plan.
+Jetson AGX Orin.  With NixOS no longer required (an Ubuntu-based OS is fine), the
+Jetson's only real drawback disappears, making it the **current frontrunner**.
+See **§4.0** for the status and the near-term plan.
 
 ---
 
@@ -169,32 +170,34 @@ No per-unit data to collect beyond confirming it enumerates (done in M3-3).
 
 ### 4.0 Status and near-term plan (revised 2026-07-16)
 
-Two developments changed the server picture after the initial inventory:
+Two developments changed the server picture after the initial inventory, and a
+third simplified it:
 
 1.  **The X1 Yoga is currently down.**  Its failing 512 GB SSD (bad sectors) was
     replaced with a new **2 TB SSD**, but the machine now fails to install Linux
     (the Ubuntu installer stalls from USB).  Until it is revived it cannot be the
-    NVR host — though it remains the preferred *low-power* target if repaired
-    (§4.1).
+    NVR host — though it remains a candidate *low-power* host if repaired (§4.1).
 2.  **A Jetson AGX Orin 64 GB is available** and unused — a much more powerful
     machine that can run the entire NVR by itself (§4.3).
+3.  **NixOS is no longer a requirement.**  An Ubuntu-based OS is equally
+    acceptable, which removes the only real friction against the Jetson (whose
+    vendor OS, JetPack, is Ubuntu-based).  The **Jetson is now the frontrunner
+    for the host** — most capable, already idle, and with no OS caveat.
 
-**Near-term plan (tight schedule — a one-week absence starts soon):**
+**Near-term plan (there is time before departure to attempt both):**
 
--  **Camera first, server later.**  Getting the outdoor **RLC-811WA** recording
-   to its own **microSD** and viewable/alerting through the Reolink app needs
-   **no server at all**, and is the realistic goal before departure.  This means
-   a *temporary*, time-boxed reliance on the Reolink app/cloud for the week — an
-   explicit exception to the no-vendor-cloud stance in §6.7, to be undone once
-   the NVR is live (M2-3).
--  **The NVR-host decision is not on the critical path** and should not be rushed
-   under the deadline.  The **desktop** (§4.2) is the low-friction interim host;
-   the **Jetson** (§4.3) is the strongest permanent candidate and is what M1-4
-   should evaluate.
--  The host decision is **ADR-003 / issue #5**, still open — now weighing three
-   machines plus a NixOS-vs-vendor-OS tradeoff.
+-  **Stand up the Jetson as the host** — JetPack + Docker + Frigate's
+   `stable-tensorrt-jp6` image (§4.3) — and **install the outdoor RLC-811WA**.
+-  **Camera-standalone is the guaranteed win.**  Even if the Jetson/Frigate is
+   not fully wired up in time, the 811WA recording to its own **microSD** and
+   viewable/alerting via the Reolink app needs **no server** and gives immediate
+   coverage.  (That app/cloud use is a *temporary*, time-boxed exception to the
+   no-vendor-cloud stance in §6.7, undone once the NVR is live per M2-3.)
+-  The **desktop** (§4.2) is the fallback host if the Jetson path stalls.
+-  The formal host decision is **ADR-003 / issue #5**, still open — now decided
+   on capability, power, and noise (the OS question is settled).
 
-### 4.1 Lenovo ThinkPad X1 Yoga, 3rd gen (2018) — preferred low-power host (currently DOWN)
+### 4.1 Lenovo ThinkPad X1 Yoga, 3rd gen (2018) — low-power host candidate (currently DOWN)
 
 **⚠ Current status: will not install/boot.**  After swapping the failing 512 GB
 SSD for a new 2 TB SSD, the Ubuntu installer stalls when booted from USB.  Things
@@ -240,13 +243,12 @@ Per-unit (TODO, once it boots):
 
 ### 4.2 Linux desktop — interim NVR host
 
-With the laptop down, the desktop is the **low-friction interim host**: a clean
-x86 target that runs NixOS + Frigate + the Coral without the Jetson's OS
-complications.  Its higher idle draw — the original reason it was only "reserve"
-— is the main cost; for an interim (or even permanent) host that may be
-acceptable, and it is quantified in the ADR-003 power comparison.  It also
-remains the machine for the separate **M7-2** GPU-enrichment evaluation.  Specs
-are still TODO (fill in once it is powered up).
+The **fallback host** if the Jetson path stalls: a straightforward x86 target
+that runs Frigate + the Coral on Ubuntu without fuss.  Its higher idle draw —
+the original reason it was only "reserve" — is the main cost, and it is
+quantified in the ADR-003 power comparison.  It also remains the machine for the
+separate **M7-2** GPU-enrichment evaluation.  Specs are still TODO (fill in once
+it is powered up).
 
 | Property | Value |
 |----------|-------|
@@ -286,21 +288,19 @@ Coral's ~10 ms but able to run larger/better models and many streams
 effortlessly — and video decode uses the Jetson's **NVDEC** media engine.  One
 box does everything the laptop-plus-Coral plan does, and more.
 
-**The catch — NixOS integration.**  The Jetson's clean, vendor-supported path is
-NVIDIA **JetPack** (an Ubuntu-based L4T image) + Docker, **not** NixOS.  NixOS is
-possible via the community **[`jetpack-nixos`](https://github.com/anduril/jetpack-nixos)**
-overlay — it supports `orin-agx` and is actively maintained — but it is advanced:
-documented display-console quirks on Orin (no HDMI/DP console; serial for
-troubleshooting), UEFI-boot caveats, and a vendor-BSP flashing process.  So the
-Jetson trades some of our **declarative-NixOS reproducibility goal** (project
-goal #3) for raw power and use of idle hardware.
+**OS and deployment.**  The Jetson's clean, vendor-supported path is NVIDIA
+**JetPack** (an Ubuntu-based L4T image) + Docker — exactly what Frigate's
+`stable-tensorrt-jp6` image targets.  With NixOS no longer required (§4.0) this
+is a straightforward path with no caveat.  (NixOS on Jetson is possible later via
+the community [`jetpack-nixos`](https://github.com/anduril/jetpack-nixos) overlay
+if it is ever wanted, but it is optional and not planned.)
 
 **Working assessment (for ADR-003 / M1-4):** the Jetson is the most capable and
-the most compute-per-watt option, and it is free (already owned, idle).  Its one
-real downside is the NixOS friction.  Recommendation: evaluate it seriously as
-the *permanent* host — likely JetPack + Docker first, `jetpack-nixos` later —
-while the **desktop** stands up an NVR sooner if we want one running this week.
-Measure its wall-power in a low `nvpmodel` for the ADR-003 comparison.
+the most compute-per-watt option, it is free (already owned, idle), and — with
+the OS question settled — it has no real downside for our use.  It is the
+**frontrunner for the host**: the plan is JetPack + Docker + Frigate now, with
+the **desktop** as the fallback if the Jetson path stalls.  Measure its
+wall-power in a low `nvpmodel` for the ADR-003 comparison.
 
 ---
 
@@ -395,8 +395,8 @@ tracked by an M2 (or later) task.
 | Coral enumerates and hits expected inference latency | M3-3 |
 | X1 Yoga: **revive it** (AHCI / Secure Boot / `nomodeset`), then CPU/RAM/SSD, USB 3.0, BIOS AC-attach | M1-4 / M3-1 |
 | Desktop full specs + measured power draw | M1-4 (ADR-003 cost comparison) |
-| Jetson: Frigate-on-JetPack vs `jetpack-nixos`; NVMe fitted; wall-power in low `nvpmodel` | M1-4 (ADR-003) |
-| Host decision among laptop / desktop / Jetson (+ NixOS tradeoff) | ADR-003 / #5 |
+| Jetson: JetPack + Docker Frigate (`stable-tensorrt-jp6`); NVMe fitted; wall-power in low `nvpmodel` | M1-4 (ADR-003) |
+| Host decision among laptop / desktop / Jetson (capability, power, noise) | ADR-003 / #5 |
 
 ---
 
@@ -424,10 +424,10 @@ above.
 - [ ] CPU, GPU + VRAM, RAM, PSU wattage
 - [ ] Idle and under-load power draw (plug meter)
 
-**Jetson AGX Orin (evaluate as permanent host):**
-- [ ] Confirm it boots; note the JetPack version; is an M.2 NVMe fitted?
+**Jetson AGX Orin (frontrunner host — set up first):**
+- [ ] Boot JetPack (6+); confirm networking; is an M.2 NVMe fitted (for recordings)?
+- [ ] Install Docker; pull Frigate's `stable-tensorrt-jp6` image
 - [ ] Wall-power draw in a low `nvpmodel` (for the ADR-003 comparison)
-- [ ] Decide path: JetPack + Docker (fast) vs `jetpack-nixos` (declarative)
 
 ---
 
