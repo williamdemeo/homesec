@@ -12,7 +12,7 @@ template/index in M1-5.
 - **Date**: 2026-07-14
 - **Deciders**: @williamdemeo
 - **Issue**: M1-3 (#4)
-- **Related**: ADR-003 (server host, M1-4), ADR-004 (Frigate deployment mechanism, M4-1), M2-1/M2-2 (camera streams), M3-3 (Coral on NixOS), M4-2/M4-3 (decode + detector), M7-2 (desktop-GPU enrichments)
+- **Related**: ADR-003 (server host, M1-4), ADR-004 (Frigate deployment mechanism, M4-1), M2-1/M2-2 (camera streams), M3-3 (Coral / detector setup), M4-2/M4-3 (decode + detector), M7-2 (desktop-GPU enrichments)
 
 ## Context
 
@@ -26,9 +26,10 @@ Requirements that matter for this project:
 - **Local object detection on the Google Coral** we already own — no cloud
   inference.
 - **Works well with Reolink cameras**, including the models with finicky RTSP.
-- **Hardware-accelerated decode** on the X1 Yoga's Intel iGPU (VAAPI), so three
-  streams (incl. 4K H.265) don't melt the CPU.
-- **Declarative deployment on NixOS.**
+- **Hardware-accelerated decode** on the host's GPU (VAAPI on an Intel iGPU, or
+  NVDEC on the Jetson), so three streams (incl. 4K H.265) don't melt the CPU.
+- **Reproducible, easily-redeployed configuration** — Docker on an Ubuntu-based
+  OS is fine; NixOS is optional, not required.
 - A **web + phone UI** usable by non-technical family, with **notifications**.
 - An **actively maintained** project (a surveillance system is long-lived).
 
@@ -54,8 +55,9 @@ reference `clean_copy`.
 - **Any cloud NVR** (Reolink Cloud, Ring, Nest, etc.) — contrary to the whole
   local-first, no-vendor-cloud premise (see ADR-001 and the HARDWARE.md privacy
   stance).
-- **Running detection on the desktop GPU — for now.**  The plan is the Coral on
-  the laptop.  Whether the reserve desktop's 8 GB GPU earns its power draw for
+- **Running detection on the desktop GPU — for now.**  Detection runs on the
+  chosen host — the Coral on an x86 host, or the Orin GPU if ADR-003 selects the
+  Jetson.  Whether the reserve desktop's 8 GB GPU earns its power draw for
   Frigate's heavier *enrichment* features is a separate evaluation deferred to
   **M7-2**; it is not part of the day-one NVR.
 
@@ -68,7 +70,7 @@ Criteria from the issue, scored for our context:
 | Coral Edge TPU detection | ✅ first-class (`edgetpu`, ~10 ms/inference); also OpenVINO/TensorRT/ONNX | ⚠️ only via external add-ons (zmeventnotification/hooks) | ⚠️ plugin-based, less polished | ✅ has Coral support, but less mature than Frigate's |
 | Reolink E1 / RLC-811WA support | ✅ documented per-model stream guidance (see below); go2rtc restreaming | ⚠️ generic RTSP/ONVIF; no Reolink-specific guidance | ⚠️ generic | ✅ good, plugin-based |
 | Hardware decode (VAAPI on Intel iGPU) | ✅ `preset-vaapi` and other presets built in | ⚠️ possible but manual | ⚠️ manual | ✅ supported |
-| NixOS deployability | ✅ native `services.frigate` module **and** official OCI image (see below) | ⚠️ packaged but heavier (MySQL/Apache stack) | ⚠️ mostly Docker | ⚠️ mostly Docker/npm |
+| Deployability (Docker / declarative) | ✅ official Docker image (runs on any host OS) + optional native NixOS module | ⚠️ packaged but heavier (MySQL/Apache stack) | ⚠️ mostly Docker | ⚠️ mostly Docker/npm |
 | Web + phone UI | ✅ polished responsive UI + PWA; built-in auth | ⚠️ dated UI | ⚠️ functional, buggy per reports | ✅ good, strong Apple/HomeKit story |
 | Notifications | ✅ built-in WebPush + MQTT + HA integration | ⚠️ via add-ons | ⚠️ basic | ✅ via HA/HomeKit |
 | Project activity / maintenance | ✅ very active (0.17.x, 2026) | ⚠️ mature but slow-moving | ⚠️ intermittent | ✅ active |
@@ -81,34 +83,37 @@ Criteria from the issue, scored for our context:
 - **Shinobi** is popular but community reports cite persistent glitches, and its
   detection/Coral integration is not in Frigate's league.
 - **Scrypted** is excellent — especially if the household were Apple/HomeKit-
-  centric — but for a Coral-based, Linux/NixOS, local-detection NVR, Frigate's
+  centric — but for a Coral-based, Linux, local-detection NVR, Frigate's
   Coral + go2rtc + Home Assistant integration is years more mature.
 - **Viseron** (Docker, EdgeTPU-capable) and **Home-Assistant-centric** stacks
   (motionEye et al.) are viable but have smaller communities / are not
   purpose-built local-detection NVRs; noted for completeness, not chosen.
 
-Frigate is the only option that is simultaneously **built around** local Coral
-detection, has **explicit Reolink** support, does **VAAPI** decode, deploys
-**natively on NixOS**, and is **actively maintained** with a family-friendly UI.
+Frigate is the only option that is simultaneously **built around** local
+detection (Coral, or the Jetson's GPU), has **explicit Reolink** support, does
+**hardware decode** (VAAPI / NVDEC), deploys **cleanly on Linux** (Docker, or an
+optional native NixOS module), and is **actively maintained** with a
+family-friendly UI.
 
-## Deployment options on NixOS (feeds ADR-004 / M4-1)
+## Deployment options (feeds ADR-004 / M4-1)
 
-Listed here as required; the *choice* between them is ADR-004.
+Listed here as required; the *choice* is ADR-004.  With NixOS no longer a
+requirement, the host OS is likely Ubuntu-based (JetPack on the Jetson — see
+HARDWARE.md §4.3), which makes the Docker path the natural default.
 
-1. **Native `services.frigate` NixOS module.**  nixpkgs provides
-   `services.frigate.{enable,package,settings,checkConfig,...}`, with the Frigate
-   config expressed as a Nix attrset and an nginx vhost set up for the UI.  Most
-   declarative; but the packaged version can lag upstream, and the
-   ffmpeg/go2rtc/detector runtimes must come together from nixpkgs (hardware-
-   accel and Coral wiring is more hands-on).
-2. **Official OCI image via `virtualisation.oci-containers`** (docker or podman
-   backend), pinned by digest.  Gives bit-for-bit what upstream ships and tests
-   (bundled ffmpeg presets, go2rtc, detector runtimes), at the cost of a
-   container layer and explicit device pass-through (`/dev/bus/usb` for the
-   Coral, `/dev/dri` for VAAPI) and an adequate `--shm-size`.
+1. **Official Docker image** (via `docker compose`, or `virtualisation.oci-containers`
+   on NixOS), pinned by digest — the `stable-tensorrt-jp6` image on the Jetson.
+   Gives bit-for-bit what upstream ships and tests (bundled ffmpeg presets,
+   go2rtc, detector runtimes) and runs on any host OS, at the cost of a container
+   layer and explicit device pass-through (the GPU/Coral and the decode device)
+   plus an adequate `--shm-size`.  **Primary path.**
+2. **Native `services.frigate` NixOS module** — optional, only if a host runs
+   NixOS.  nixpkgs provides `services.frigate.{enable,package,settings,...}` with
+   the config as a Nix attrset and an nginx vhost; most declarative, but the
+   packaged version can lag upstream and the runtimes come together from nixpkgs.
 
-Presumption to carry into ADR-004: the **pinned OCI image** for upstream parity,
-with the config templated from Nix — but that is decided in M4-1, not here.
+Presumption to carry into ADR-004: the **pinned Docker image** for upstream
+parity — decided for real in M4-1, not here.
 
 ## Reolink stream guidance (feeds M2-1 / M2-2)
 
@@ -146,9 +151,14 @@ it.
 That said, community experience is that OpenVINO on an Intel iGPU is a viable
 alternative with easier driver maintenance (Coral's kernel/driver support has
 grown fussier over time).  So **OpenVINO on the UHD 620 is our documented
-fallback** if the Coral proves troublesome under NixOS (a real risk flagged in
+fallback** if the Coral proves troublesome (a driver/kernel risk flagged in
 M3-3).  Choosing Frigate keeps both paths open with a one-line config change;
 the primary-vs-fallback call is validated in M3-3/M4-3, not here.
+
+**Host caveat.**  This Coral-vs-OpenVINO analysis assumes an **x86 host** (the
+laptop or desktop).  If ADR-003 selects the **Jetson** (now the frontrunner —
+HARDWARE.md §4.3), detection instead runs on the Orin GPU/DLA via **TensorRT**,
+the Coral is unnecessary, and this section is moot.
 
 ## Consequences
 
@@ -158,13 +168,14 @@ the primary-vs-fallback call is validated in M3-3/M4-3, not here.
   hardware); most later decisions have well-trodden Frigate answers.
 - go2rtc (bundled) solves Reolink restreaming and one-connection-per-camera fan-
   out; VAAPI decode is a built-in preset; WebPush/MQTT cover notifications (M5).
-- Two clean NixOS deployment paths (native module or pinned OCI image).
+- A clean Docker deployment path (runs on Ubuntu/JetPack/NixOS), plus an optional native NixOS module.
 - Coral **and** OpenVINO detector support gives a hardware-independent fallback.
 
 **Negative / to watch**
 
-- **Coral driver/kernel fragility on NixOS** — the top integration risk (M3-3);
-  the OpenVINO fallback above is the mitigation.
+- **Coral driver/kernel fragility** (on any Linux) — an integration risk *if the
+  host uses the Coral* (M3-3); mitigated by the OpenVINO fallback, or avoided
+  entirely if the Jetson host is chosen (GPU detection, no Coral).
 - **Version churn** — Frigate moves fast and has breaking changes between minor
   versions (e.g. `clean_copy` removed in 0.17). Pin a version and bump
   deliberately (M6-3); re-run the M4-5 validation subset after each bump.
