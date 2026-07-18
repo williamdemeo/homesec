@@ -43,9 +43,11 @@ In priority order:
 | 1× | Linux desktop (8 GB GPU) | Fallback host / stretch compute |
 | — | Starlink router | WiFi uplink (CGNAT — no inbound connections) |
 
-The host choice (Jetson vs. desktop vs. laptop) is tracked in **ADR-003 / issue #5**; the
-Jetson leads on capability and idle power.  See [`docs/HARDWARE.md`](docs/HARDWARE.md) for the
-full inventory and current status.
+The host choice (Jetson vs. desktop vs. laptop) is still open; it will be recorded as
+**ADR-003** (issue #5) once the power measurements are in.  The Jetson leads on raw
+capability, but the final call weighs that against measured power draw — where the low-power
+laptop could still win.  See [`docs/HARDWARE.md`](docs/HARDWARE.md) for the full inventory and
+current status.
 
 ## Architecture
 
