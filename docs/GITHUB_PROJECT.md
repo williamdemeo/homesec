@@ -15,7 +15,7 @@ edits to those regions will be overwritten on the next render.
 
 # homesec — GitHub Project Roadmap
 
-**Project Title**:  homesec 1.0 — Cameras, Coral-accelerated NVR, and remote monitoring on Nix
+**Project Title**:  homesec 1.0 — Cameras, Coral-accelerated NVR, and remote monitoring
 
 **Repository**:  `williamdemeo/homesec`
 
@@ -25,7 +25,7 @@ edits to those regions will be overwritten on the next render.
 
 ## Summary
 
-A privacy-respecting home video-surveillance system built from three Reolink WiFi cameras (two E1 4MP indoor pan-tilt units and one RLC-811WA 4K outdoor unit with 5× optical zoom), a Google Coral USB Edge TPU for local person/pet/vehicle detection, and a repurposed Lenovo X1 Yoga (3rd gen) running NixOS as the 24/7 NVR server.  The NVR software is Frigate, restreaming through go2rtc, with hardware video decode on the laptop's Intel iGPU and ML inference on the Coral.  Monitoring is local-first: computers on the LAN reach the Frigate UI directly, and phones reach it remotely over a Tailscale overlay network — Starlink's CGNAT makes conventional port forwarding impossible, and we would not want to expose the NVR to the internet anyway.  Work is organized into seven milestones: planning and architecture decisions (M1), camera bring-up and hardening (M2), server foundation on NixOS (M3), Frigate deployment (M4), remote and mobile access (M5), operations (M6), and stretch goals (M7).
+A privacy-respecting home video-surveillance system built from three Reolink WiFi cameras (two E1 4MP indoor pan-tilt units and one RLC-811WA 4K outdoor unit with 5× optical zoom), local person/pet/vehicle detection on our own hardware, and a dedicated 24/7 NVR server (the NVIDIA Jetson AGX Orin is the current frontrunner host, running Ubuntu-based JetPack + Docker).  The NVR software is Frigate, restreaming through go2rtc, with hardware video decode and local ML inference on the host — on the Jetson, detection on its GPU/DLA and decode on NVDEC; on an x86 host, the Coral for detection and an Intel iGPU for decode.  Monitoring is local-first: computers on the LAN reach the Frigate UI directly, and phones reach it remotely over a Tailscale overlay network — Starlink's CGNAT makes conventional port forwarding impossible, and we would not want to expose the NVR to the internet anyway.  Work is organized into seven milestones: planning and architecture decisions (M1), camera bring-up and hardening (M2), server foundation (M3), Frigate deployment (M4), remote and mobile access (M5), operations (M6), and stretch goals (M7).
 
 ---
 
@@ -34,9 +34,9 @@ A privacy-respecting home video-surveillance system built from three Reolink WiF
 The design goals, in priority order:
 
 1. **Local-first and private.**  Video never leaves the house except over our own encrypted overlay network.  The cameras' vendor cloud (Reolink UID/P2P) is disabled once the NVR is running; detection runs locally on the Coral, not on anyone's cloud service.
-2. **Reliable and unattended.**  The server runs headless 24/7, restarts itself after power failures (with the laptop battery acting as a built-in UPS), and alerts us when a camera goes offline or the disk fills up — rather than failing silently until the day we actually need footage.
-3. **Declarative and reproducible.**  The entire server configuration — NixOS system, Frigate config, Tailscale, monitoring — lives in this repository as a Nix flake.  Rebuilding the server on new hardware should be a checkout-and-rebuild operation, not archaeology.
-4. **Cheap to run.**  The X1 Yoga idles at roughly a tenth of the desktop's draw.  With decode on its Intel Quick Sync iGPU and inference on the Coral, three cameras are well within its capacity.  The desktop (with its 8 GB GPU) is held in reserve for compute-hungry stretch features (M7-2) rather than burning watts from day one.
+2. **Reliable and unattended.**  The server runs headless 24/7, restarts itself after power failures, and alerts us when a camera goes offline or the disk fills up — rather than failing silently until the day we actually need footage.
+3. **Reproducible.**  The entire server configuration — OS, Frigate config, Tailscale, monitoring — lives in this repository (a Docker Compose stack plus setup scripts; NixOS optional).  Rebuilding the server on new hardware should be a checkout-and-redeploy operation, not archaeology.
+4. **Efficient.**  The chosen host handles three cameras comfortably without a big power bill — on the Jetson, detection on its GPU/DLA and decode on NVDEC; on an x86 host, the Coral for detection and an Intel iGPU for decode.  The desktop (with its 8 GB GPU) doubles as the machine for compute-hungry stretch features (M7-2).
 
 The dependency spine is: decisions first (M1), then camera bring-up (M2) and server foundation (M3) in parallel, converging on the Frigate deployment (M4).  Remote access (M5) and operational hardening (M6) build on a working NVR, and the stretch milestone (M7) is explicitly optional.
 
@@ -48,9 +48,10 @@ The dependency spine is: decisions first (M1), then camera bring-up (M2) and ser
 |---|--------|------|-----------|
 | 2× | Reolink E1 (4MP, WiFi 6) | Indoor cameras (pan-tilt) | 4MP, 2.4/5 GHz, pan/tilt, human/pet detection, night vision, 2-way talk, microSD slot |
 | 1× | Reolink RLC-811WA | Outdoor camera | 4K/8MP, 5× optical zoom, WiFi 6, H.265, color night vision, human/vehicle/animal detection, microSD slot |
-| 1× | Google Coral USB Accelerator | Edge TPU for NVR object detection | USB 3.0; ~10 ms/inference on Frigate's default MobileDet model |
-| 1× | Lenovo X1 Yoga (3rd gen) | NVR server (chosen in ADR-003) | 8th-gen Intel Core (UHD 620 iGPU: VAAPI/Quick Sync decode incl. HEVC), NVMe, USB-A 3.0, battery = built-in UPS |
-| 1× | Linux desktop | Reserve / stretch compute | Large PSU, fast CPU, 8 GB GPU; higher idle draw — reserved for M7-2 |
+| 1× | Google Coral USB Accelerator | Object detection on an x86 host (optional) | USB 3.0; ~10 ms/inference; unused if the Jetson hosts (GPU detection) |
+| 1× | NVIDIA Jetson AGX Orin 64 GB | NVR server — current frontrunner (ADR-003) | aarch64, Ampere GPU + DLA (TensorRT detection), NVDEC decode; Ubuntu/JetPack + Docker; makes the Coral optional |
+| 1× | Lenovo X1 Yoga (3rd gen) | Low-power host candidate (currently down) | 8th-gen Intel (UHD 620: VAAPI/Quick Sync decode incl. HEVC), NVMe, USB-A 3.0, battery = UPS; won't boot after SSD swap |
+| 1× | Linux desktop | Fallback host / stretch compute | Large PSU, fast CPU, 8 GB GPU; higher idle draw — also the M7-2 machine |
 | — | Starlink router | WiFi / uplink | CGNAT (no inbound connections); limited router features |
 
 ---
@@ -63,12 +64,12 @@ flowchart LR
     e1a["E1 indoor cam A<br/>(4MP pan-tilt)"]
     e1b["E1 indoor cam B<br/>(4MP pan-tilt)"]
     r811["RLC-811WA outdoor cam<br/>(4K, 5x zoom)"]
-    subgraph srv["X1 Yoga — NixOS (flake in this repo)"]
+    subgraph srv["NVR host — Jetson AGX Orin (Ubuntu/JetPack + Docker)"]
       go2rtc["go2rtc<br/>(restream)"]
       frigate["Frigate NVR<br/>(auth + web UI)"]
-      coral["Coral USB TPU<br/>(object detection)"]
-      vaapi["Intel iGPU<br/>(VAAPI decode)"]
-      hdd[("External USB drive<br/>recordings")]
+      detect["Orin GPU/DLA<br/>(TensorRT detection)"]
+      decode["NVDEC<br/>(HW decode)"]
+      hdd[("NVMe / USB SSD<br/>recordings")]
     end
     pc["Home computers<br/>(LAN browser)"]
   end
@@ -80,13 +81,15 @@ flowchart LR
   e1b -- "sub + main stream" --> go2rtc
   r811 -- "sub + main stream" --> go2rtc
   go2rtc --> frigate
-  frigate <--> coral
-  frigate <--> vaapi
+  frigate <--> detect
+  frigate <--> decode
   frigate --> hdd
   pc --> frigate
   phones -. "WireGuard tunnel" .-> frigate
   laptops -. "WireGuard tunnel" .-> frigate
 ```
+
+_On an x86 host, the **Orin GPU/DLA** box becomes the **Coral USB TPU** and **NVDEC** becomes **Intel iGPU / VAAPI**._
 
 ---
 
@@ -94,14 +97,14 @@ flowchart LR
 
 - `milestone-1-planning` (0075ca) — Milestone 1: Planning, network, and architecture decisions.
 - `milestone-2-cameras` (0075ca) — Milestone 2: Camera bring-up and hardening.
-- `milestone-3-server` (0075ca) — Milestone 3: Server foundation on NixOS.
+- `milestone-3-server` (0075ca) — Milestone 3: Server foundation.
 - `milestone-4-frigate` (0075ca) — Milestone 4: Frigate NVR deployment.
 - `milestone-5-remote` (5319e7) — Milestone 5: Remote and mobile access.
 - `milestone-6-ops` (5319e7) — Milestone 6: Operations, monitoring, and security review.
 - `milestone-7-stretch` (5319e7) — Milestone 7: Stretch goals and future work.
 - `hardware` (d93f0b) — Physical equipment: cameras, Coral TPU, server machines, storage.
 - `network` (fbca04) — WiFi, Starlink, Tailscale, and remote-access plumbing.
-- `nix` (7057ff) — Nix flake and NixOS configuration.
+- `nix` (7057ff) — Server configuration and deployment (Docker Compose, setup scripts, host config).
 - `frigate` (0e8a16) — Frigate / go2rtc configuration and tuning.
 - `security` (b60205) — Security, privacy, and hardening.
 - `documentation` (1d76db) — Documentation and runbooks.
@@ -117,7 +120,7 @@ flowchart LR
 
 **Description**:
 
-Establish the decisions that shape everything downstream, and record them as short ADRs in `docs/adr/`.  Inventory the hardware and write down what the system must do (`docs/HARDWARE.md`).  Assess the Starlink network — CGNAT means no inbound connections, which forces the remote-access architecture toward an overlay VPN (ADR-001) — and survey WiFi signal at the intended camera locations (`docs/NETWORK.md`).  Choose the NVR software (ADR-002; Frigate is the presumptive choice given first-class Coral support) and the server host (ADR-003; the X1 Yoga is the presumptive choice on power cost, with the desktop held in reserve).  Scaffold the repository so subsequent work has a home.
+Establish the decisions that shape everything downstream, and record them as short ADRs in `docs/adr/`.  Inventory the hardware and write down what the system must do (`docs/HARDWARE.md`).  Assess the Starlink network — CGNAT means no inbound connections, which forces the remote-access architecture toward an overlay VPN (ADR-001) — and survey WiFi signal at the intended camera locations (`docs/NETWORK.md`).  Choose the NVR software (ADR-002; Frigate is the presumptive choice given first-class Coral support) and the server host (ADR-003; the NVIDIA Jetson AGX Orin is the current frontrunner, with the desktop as fallback).  Scaffold the repository so subsequent work has a home.
 
 **Exit criterion**: ADR-001 (remote access), ADR-002 (NVR software), and ADR-003 (server host) are merged; `docs/HARDWARE.md` and `docs/NETWORK.md` are merged; the repository has a README describing the system, a `docs/` tree, and a `.gitignore` that keeps secrets out of git.
 
@@ -133,13 +136,13 @@ Get all three cameras out of their boxes, onto current firmware, joined to the W
 
 ---
 
-### Milestone 3 — Server foundation on NixOS
+### Milestone 3 — Server foundation
 
 **Description**:
 
-Turn the X1 Yoga into a headless, declaratively-configured NixOS server defined by a flake in this repository.  Configure laptop-as-server behavior: ignore the lid switch, never suspend, power back on after outages, and set battery-charge thresholds so the always-plugged-in battery survives as a built-in UPS.  Attach and mount external USB storage sized for the recording retention policy.  Get the Coral USB accelerator recognized and running a test inference.  Bring up Tailscale and harden SSH, with secrets (camera credentials, Tailscale auth key) handled by an encrypted-secrets tool rather than committed plaintext.
+Turn the chosen host (ADR-003; Ubuntu-based — JetPack on the Jetson) into a headless server whose configuration lives in this repository (Docker Compose plus setup scripts).  Configure headless-server behavior: never suspend, power back on after outages — and, if the host is the laptop, ignore the lid switch and set battery-charge thresholds so the always-plugged-in battery survives as a built-in UPS.  Attach and mount external storage sized for the recording retention policy.  If the Coral is the detector (x86 host), get it recognized and running a test inference; on the Jetson, detection runs on the GPU instead.  Bring up Tailscale and harden SSH, with secrets (camera credentials, Tailscale auth key) handled by an encrypted-secrets tool rather than committed plaintext.
 
-**Exit criterion**: the laptop boots headless with the lid closed and is rebuilt from `nixos-rebuild switch --flake` against this repo; the recordings volume is mounted declaratively; the Coral completes a documented test inference; the server is reachable over Tailscale with password SSH disabled; no plaintext secret is committed.
+**Exit criterion**: the host boots headless and is reproducible from a clean checkout of this repo (`docker compose up -d` starts the stack; a laptop host also survives lid-closed); the recordings volume is mounted; detection is proven (a Coral test inference on x86, or the Orin GPU on the Jetson); the server is reachable over Tailscale with password SSH disabled; no plaintext secret is committed.
 
 ---
 
@@ -147,7 +150,7 @@ Turn the X1 Yoga into a headless, declaratively-configured NixOS server defined 
 
 **Description**:
 
-Deploy Frigate on the server (deployment mechanism — nixpkgs module vs. pinned OCI container — decided in ADR-004) with go2rtc restreaming, authentication enabled, all three cameras configured (detect on sub streams, record on main streams), VAAPI hardware decode on the iGPU, and object detection on the Coral.  Define the recording and retention policy, then validate the whole system end-to-end: walk tests day and night, pet and vehicle detection, false-positive tuning with zones and motion masks, and a week of storage observation.
+Deploy Frigate on the server (deployment mechanism — Docker Compose / pinned image (or a native module if the host runs NixOS), decided in ADR-004) with go2rtc restreaming, authentication enabled, all three cameras configured (detect on sub streams, record on main streams), VAAPI hardware decode on the iGPU, and object detection on the Coral.  Define the recording and retention policy, then validate the whole system end-to-end: walk tests day and night, pet and vehicle detection, false-positive tuning with zones and motion masks, and a week of storage observation.
 
 **Exit criterion**: the Frigate UI shows live view of all three cameras; detection runs on the Coral (not CPU fallback) at expected inference speed; detection events are recorded, reviewable, and expire per the retention policy; end-to-end validation (M4-5) is written up in `docs/CAMERAS.md`; the full Frigate configuration lives in this repository.
 
@@ -167,7 +170,7 @@ Make the system usable by the whole household from anywhere.  Install Tailscale 
 
 **Description**:
 
-Make the system boring.  Alerting for the failure modes that matter: service down, disk filling, camera offline, Coral failure.  A tested rebuild-from-repo procedure (the recordings themselves are deliberately not backed up — the configuration is).  A defined update routine for NixOS, the Frigate version pin, and camera firmware.  A security review of the finished system — external exposure scan, Tailscale ACLs, physical placement of the server — and a runbook covering routine operations and likely failures.
+Make the system boring.  Alerting for the failure modes that matter: service down, disk filling, camera offline, Coral failure.  A tested rebuild-from-repo procedure (the recordings themselves are deliberately not backed up — the configuration is).  A defined update routine for the OS, the Frigate version pin, and camera firmware.  A security review of the finished system — external exposure scan, Tailscale ACLs, physical placement of the server — and a runbook covering routine operations and likely failures.
 
 **Exit criterion**: induced faults (stopped service, disconnected camera, near-full disk) each produce an alert on our phones; a from-scratch rebuild on spare hardware has been performed and timed; `docs/RUNBOOK.md` and the security-review checklist are merged; an update cadence is documented and scheduled.
 
@@ -443,7 +446,7 @@ Configure the cameras themselves so the NVR receives streams it can use efficien
 
 ---
 
-## Milestone 3 — Server foundation on NixOS
+## Milestone 3 — Server foundation
 
 <!-- BEGIN GENERATED: milestone-3 -->
 
@@ -1001,9 +1004,9 @@ graph TD
     M2_4["M2-4: Camera-side tuning"]
   end
   subgraph "M3 — Server foundation"
-    M3_1["M3-1: Headless NixOS flake"]
+    M3_1["M3-1: Headless server host"]
     M3_2["M3-2: Recording storage"]
-    M3_3["M3-3: Coral on NixOS"]
+    M3_3["M3-3: Coral on the host"]
     M3_4["M3-4: Tailscale + secrets"]
   end
   subgraph "M4 — Frigate NVR"
