@@ -73,8 +73,8 @@ The **Starlink Gen 3 router does not support DHCP reservations** (static leases)
 and its app is deliberately minimal — no web admin, no visible/con­figurable DHCP
 pool range.  This drives the address plan in §3: rather than reserve leases on
 the router, we assign **static IPs on each device** (camera-side for the
-cameras, in NixOS for the server), chosen high in the subnet to minimize the
-chance of colliding with a dynamically-assigned address.
+cameras, in the host config for the server), chosen high in the subnet to
+minimize the chance of colliding with a dynamically-assigned address.
 
 - Default LAN subnet (typically `192.168.1.0/24`, gateway `192.168.1.1`) —
   confirm actual: **TODO (on-site)**
@@ -109,7 +109,7 @@ avoid the (unknown) DHCP pool.
 
 | Device | Role | Hostname | Static LAN IP | Set where | MAC |
 |--------|------|----------|---------------|-----------|-----|
-| X1 Yoga | NVR server | `homesec` | `192.168.1.240` | NixOS (M3-1) | _TODO_ |
+| NVR host (Jetson) | NVR server | `homesec` | `192.168.1.240` | host config (M3-1) | _TODO_ |
 | RLC-811WA | outdoor cam | `cam-out` | `192.168.1.241` | camera Network settings (M2-1) | _TODO_ |
 | Reolink E1 #a | indoor cam | `cam-in-a` | `192.168.1.242` | camera Network settings (M2-2) | _TODO_ |
 | Reolink E1 #b | indoor cam | `cam-in-b` | `192.168.1.243` | camera Network settings (M2-2) | _TODO_ |
